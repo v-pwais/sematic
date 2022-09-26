@@ -10,6 +10,7 @@ import typing
 from sematic.abstract_calculator import CalculatorError
 from sematic.abstract_future import AbstractFuture, FutureState
 from sematic.resolver import Resolver
+from sematic.utils.exceptions import ExceptionMetadata, format_exception_for_run
 
 logger = logging.getLogger(__name__)
 
@@ -213,16 +214,27 @@ class StateMachineResolver(Resolver, abc.ABC):
             future.value = nested_future.value
             self._set_future_state(future, FutureState.RESOLVED)
 
-    def _handle_future_failure(self, future: AbstractFuture, exception: Exception):
+    def _handle_future_failure(
+        self,
+        future: AbstractFuture,
+        exception: Exception,
+        exception_metadata: typing.Optional[ExceptionMetadata] = None,
+    ):
         """
         When a future fails, its state machine as well as that of its parent
         futures need to be updated.
-
-        Additionally (not yet implemented) the stack trace needs to be persisted
-        in order to display in the UI.
         """
-        self._fail_future_and_parents(future)
-        raise exception
+        if (
+            future.props.retry_settings is not None
+            and future.props.retry_settings.should_retry(
+                exception_metadata or format_exception_for_run(exception)
+            )
+        ):
+            self._set_future_state(future, FutureState.CREATED)
+            future.props.retry_settings.retry_count += 1
+        else:
+            self._fail_future_and_parents(future)
+            raise exception
 
     def _fail_future_and_parents(
         self,
