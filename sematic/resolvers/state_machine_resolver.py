@@ -43,7 +43,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             while future.state != FutureState.RESOLVED:
                 for future_ in self._futures:
                     if future_.state == FutureState.CREATED:
-                        self._schedule_future_if_args_resolved(future_)
+                        self._schedule_future_if_ready(future_)
                     if future_.state == FutureState.RAN:
                         self._resolve_nested_future(future_)
 
@@ -187,12 +187,22 @@ class StateMachineResolver(Resolver, abc.ABC):
         return resolved_kwargs
 
     @typing.final
-    def _schedule_future_if_args_resolved(self, future: AbstractFuture) -> None:
-        resolved_kwargs = self._get_resolved_kwargs(future)
+    def _schedule_future_if_ready(self, future: AbstractFuture) -> None:
+        """If the future is ready to be scheduled, schedule it.
 
-        all_args_resolved = len(resolved_kwargs) == len(future.kwargs)
+        A future is considered ready if all its args are resolved and any
+        resolver-specific pre-conditions are met.
 
-        if all_args_resolved:
+        Parameters
+        ----------
+        future:
+            The future that might be scheduled
+        """
+        if not self._future_args_resolved(future):
+            return
+        ready = self._is_future_ready(future)
+        if ready:
+            resolved_kwargs = self._get_resolved_kwargs(future)
             future.resolved_kwargs = resolved_kwargs
             self._future_will_schedule(future)
             if future.props.inline:
@@ -201,6 +211,29 @@ class StateMachineResolver(Resolver, abc.ABC):
             else:
                 logger.info("Scheduling {}".format(future.calculator))
                 self._schedule_future(future)
+
+    def _is_future_ready(self, future: AbstractFuture) -> bool:
+        """Hook that resolvers can implement to add preconditions for future scheduling
+
+        Note that it is not necessary to check that the future's args are resolved; this
+        check is handled elsewhere.
+
+        Parameters
+        ----------
+        future:
+            A future that might be executed
+
+        Returns
+        -------
+        True if the future can be scheduled, False otherwise.
+        """
+        return True
+
+    @typing.final
+    def _future_args_resolved(self, future: AbstractFuture) -> bool:
+        resolved_kwargs = self._get_resolved_kwargs(future)
+        all_args_resolved = len(resolved_kwargs) == len(future.kwargs)
+        return all_args_resolved
 
     @typing.final
     def _resolve_nested_future(self, future: AbstractFuture) -> None:
