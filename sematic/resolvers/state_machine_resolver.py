@@ -40,14 +40,32 @@ class StateMachineResolver(Resolver, abc.ABC):
 
             self._resolution_will_start()
 
+            graph_changed = False
             while future.state != FutureState.RESOLVED:
                 for future_ in self._futures:
                     if future_.state == FutureState.CREATED:
-                        self._schedule_future_if_ready(future_)
+                        graph_changed |= self._schedule_future_if_ready(future_)
                     if future_.state == FutureState.RAN:
-                        self._resolve_nested_future(future_)
+                        graph_changed |= self._resolve_nested_future(future_)
+                if graph_changed:
+                    # we don't want to wait yet--since the DAG state has updated,
+                    # there may be more updates we can perform before we hit a
+                    # (potentially time expensive) wait.
+                    continue
 
-                self._wait_for_scheduled_run()
+                if any(f.state == FutureState.SCHEDULED for f in self._futures):
+                    self._wait_for_scheduled_run()
+                elif not future.state.is_terminal():
+                    # this should be impossible, but if a child resolver
+                    # mis-implements _is_future_ready this code could get hit.
+                    child_states = ", ".join(
+                        [f"{f.id}: {f.state}" for f in self._futures]
+                    )
+                    raise RuntimeError(
+                        "No scheduled futures, but the root future is not in a "
+                        f"terminal state (is in state: {future.state}). Child "
+                        f"futures are in states: {child_states}"
+                    )
 
             self._resolution_did_succeed()
 
@@ -187,7 +205,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         return resolved_kwargs
 
     @typing.final
-    def _schedule_future_if_ready(self, future: AbstractFuture) -> None:
+    def _schedule_future_if_ready(self, future: AbstractFuture) -> bool:
         """If the future is ready to be scheduled, schedule it.
 
         A future is considered ready if all its args are resolved and any
@@ -197,9 +215,14 @@ class StateMachineResolver(Resolver, abc.ABC):
         ----------
         future:
             The future that might be scheduled
+
+        Returns
+        -------
+        True if and only if a future was scheduled
         """
+        did_schedule = False
         if not self._future_args_resolved(future):
-            return
+            return did_schedule
         ready = self._is_future_ready(future)
         if ready:
             resolved_kwargs = self._get_resolved_kwargs(future)
@@ -208,9 +231,12 @@ class StateMachineResolver(Resolver, abc.ABC):
             if future.props.inline:
                 logger.info("Running inline {}".format(future.calculator))
                 self._run_inline(future)
+                did_schedule = True
             else:
                 logger.info("Scheduling {}".format(future.calculator))
                 self._schedule_future(future)
+                did_schedule = True
+        return did_schedule
 
     def _is_future_ready(self, future: AbstractFuture) -> bool:
         """Hook that resolvers can implement to add preconditions for future scheduling
@@ -236,7 +262,18 @@ class StateMachineResolver(Resolver, abc.ABC):
         return all_args_resolved
 
     @typing.final
-    def _resolve_nested_future(self, future: AbstractFuture) -> None:
+    def _resolve_nested_future(self, future: AbstractFuture) -> bool:
+        """Check if the future has a child that has been resolved, and resolve it if so
+
+        Parameters
+        ----------
+        future:
+            the future to potentially resolve
+
+        Returns
+        -------
+        True if the future had its state changed to RESOLVED, False otherwise
+        """
         if future.nested_future is None:
             raise RuntimeError("No nested future")
 
@@ -245,6 +282,8 @@ class StateMachineResolver(Resolver, abc.ABC):
         if nested_future.state == FutureState.RESOLVED:
             future.value = nested_future.value
             self._set_future_state(future, FutureState.RESOLVED)
+            return True
+        return False
 
     def _handle_future_failure(self, future: AbstractFuture, exception: Exception):
         """
