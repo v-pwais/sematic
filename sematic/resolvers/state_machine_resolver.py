@@ -104,6 +104,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             FutureState.FAILED: self._future_did_fail,
             FutureState.NESTED_FAILED: self._future_did_fail,
             FutureState.RESOLVED: self._future_did_resolve,
+            FutureState.CREATED: self._future_did_get_retried,
         }
 
         if state in CALLBACKS:
@@ -172,6 +173,12 @@ class StateMachineResolver(Resolver, abc.ABC):
         """
         pass
 
+    def _future_did_get_retried(self, future: AbstractFuture) -> None:
+        """
+        Callback allowing specific resolvers to react when a future is about to
+        be retried.
+        """
+
     @staticmethod
     def _get_resolved_kwargs(future: AbstractFuture) -> typing.Dict[str, typing.Any]:
         """
@@ -230,6 +237,7 @@ class StateMachineResolver(Resolver, abc.ABC):
                 exception_metadata or format_exception_for_run(exception)
             )
         ):
+            logger.info(f"Retrying {future.id}")
             self._set_future_state(future, FutureState.CREATED)
             future.props.retry_settings.retry_count += 1
         else:
@@ -257,6 +265,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             value = future.calculator.cast_output(value)
         except TypeError as exception:
             self._handle_future_failure(future, exception)
+            return
 
         if isinstance(value, AbstractFuture):
             self._set_nested_future(future, value)
