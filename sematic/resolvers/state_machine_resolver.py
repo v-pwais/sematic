@@ -45,6 +45,8 @@ class StateMachineResolver(Resolver, abc.ABC):
                 for future_ in self._futures:
                     if future_.state == FutureState.CREATED:
                         self._schedule_future_if_args_resolved(future_)
+                    if future_.state == FutureState.RETRYING:
+                        self._execute_future(future_)
                     if future_.state == FutureState.RAN:
                         self._resolve_nested_future(future_)
 
@@ -104,7 +106,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             FutureState.FAILED: self._future_did_fail,
             FutureState.NESTED_FAILED: self._future_did_fail,
             FutureState.RESOLVED: self._future_did_resolve,
-            FutureState.CREATED: self._future_did_get_retried,
+            FutureState.RETRYING: self._future_did_get_retried,
         }
 
         if state in CALLBACKS:
@@ -202,13 +204,16 @@ class StateMachineResolver(Resolver, abc.ABC):
 
         if all_args_resolved:
             future.resolved_kwargs = resolved_kwargs
-            self._future_will_schedule(future)
-            if future.props.inline:
-                logger.info("Running inline {}".format(future.calculator))
-                self._run_inline(future)
-            else:
-                logger.info("Scheduling {}".format(future.calculator))
-                self._schedule_future(future)
+            self._execute_future(future)
+
+    def _execute_future(self, future: AbstractFuture) -> None:
+        self._future_will_schedule(future)
+        if future.props.inline:
+            logger.info("Running inline {}".format(future.calculator))
+            self._run_inline(future)
+        else:
+            logger.info("Scheduling {}".format(future.calculator))
+            self._schedule_future(future)
 
     @typing.final
     def _resolve_nested_future(self, future: AbstractFuture) -> None:
@@ -238,7 +243,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             )
         ):
             logger.info(f"Retrying {future.id}")
-            self._set_future_state(future, FutureState.CREATED)
+            self._set_future_state(future, FutureState.RETRYING)
             future.props.retry_settings.retry_count += 1
         else:
             self._fail_future_and_parents(future)
