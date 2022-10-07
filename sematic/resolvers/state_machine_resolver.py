@@ -106,7 +106,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             FutureState.FAILED: self._future_did_fail,
             FutureState.NESTED_FAILED: self._future_did_fail,
             FutureState.RESOLVED: self._future_did_resolve,
-            FutureState.RETRYING: self._future_did_get_retried,
+            FutureState.RETRYING: self._future_did_get_marked_for_retry,
         }
 
         if state in CALLBACKS:
@@ -175,7 +175,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         """
         pass
 
-    def _future_did_get_retried(self, future: AbstractFuture) -> None:
+    def _future_did_get_marked_for_retry(self, future: AbstractFuture) -> None:
         """
         Callback allowing specific resolvers to react when a future is about to
         be retried.
