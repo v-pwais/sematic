@@ -242,7 +242,11 @@ class StateMachineResolver(Resolver, abc.ABC):
                 exception_metadata or format_exception_for_run(exception)
             )
         ):
-            logger.info(f"Retrying {future.id}")
+            retries_left = (
+                future.props.retry_settings.times
+                - future.props.retry_settings.retry_count
+            )
+            logger.info(f"Retrying {future.id}. " f"{retries_left} retries left.")
             self._set_future_state(future, FutureState.RETRYING)
             future.props.retry_settings.retry_count += 1
         else:
