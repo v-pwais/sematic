@@ -250,6 +250,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             self._set_future_state(future, FutureState.RETRYING)
             future.props.retry_settings.retry_count += 1
         else:
+            logging.info(f"Retries exhausted for {future.id}, failing now.")
             self._fail_future_and_parents(future)
             raise exception
 
