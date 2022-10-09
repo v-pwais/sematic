@@ -243,7 +243,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             )
         ):
             retries_left = (
-                future.props.retry_settings.times
+                future.props.retry_settings.retries
                 - future.props.retry_settings.retry_count
             )
             logger.info(f"Retrying {future.id}. " f"{retries_left} retries left.")
