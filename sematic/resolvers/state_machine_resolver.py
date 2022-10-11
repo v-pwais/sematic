@@ -100,7 +100,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         pass
 
     def _handle_sigint_cancel(self, signum, frame):
-        logger.info("Received SIGINT, canceling resolution...")
+        logger.warning("Received SIGINT, canceling resolution...")
         self._cancel_futures()
         self._resolution_did_cancel()
         exit(1)
