@@ -40,7 +40,8 @@ class StateMachineResolver(Resolver, abc.ABC):
             if self._detach:
                 return self._detach_resolution(future)
 
-            signal.signal(signal.SIGINT, self._handle_sigint_cancel)
+            for signum in {signal.SIGINT, signal.SIGTERM, signal.SIGKILL}:
+                signal.signal(signum, self._handle_sigint_cancel)
 
             logger.info(f"Starting resolution {future.id}")
 
