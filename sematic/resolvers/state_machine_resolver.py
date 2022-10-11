@@ -47,7 +47,7 @@ class StateMachineResolver(Resolver, abc.ABC):
 
             self._resolution_will_start()
 
-            while future.state not in {FutureState.RESOLVED, FutureState.CANCELED}:
+            while not future.state.is_terminal():
                 for future_ in self._futures:
                     if future_.state == FutureState.CREATED:
                         self._schedule_future_if_args_resolved(future_)
