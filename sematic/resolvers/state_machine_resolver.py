@@ -40,8 +40,7 @@ class StateMachineResolver(Resolver, abc.ABC):
             if self._detach:
                 return self._detach_resolution(future)
 
-            for signum in {signal.SIGINT, signal.SIGTERM, signal.SIGKILL}:
-                signal.signal(signum, self._handle_sigint_cancel)
+            self._register_signal_handlers()
 
             logger.info(f"Starting resolution {future.id}")
 
@@ -73,6 +72,17 @@ class StateMachineResolver(Resolver, abc.ABC):
                 # from Sematic's stack and more from the error from their code.
                 raise e.__cause__  # type: ignore
             raise e
+
+    def _register_signal_handlers(self):
+        for signum in {signal.SIGINT, signal.SIGTERM, signal.SIGKILL}:
+            current_handler = signal.getsignal(signum)
+
+            def _new_handler(signum, frame):
+                if current_handler:
+                    current_handler(signum, frame)
+                self._handle_sigint_cancel(signum, frame)
+
+            signal.signal(signum, _new_handler)
 
     def _detach_resolution(self, future: AbstractFuture) -> str:
         raise NotImplementedError()
