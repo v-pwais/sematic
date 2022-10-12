@@ -107,7 +107,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         logger.warning("Received SIGINT, canceling resolution...")
         self._resolution_did_cancel()
 
-    def _cancel_futures(self):
+    def _cancel_non_terminal_futures(self):
         for future in self._futures:
             if not future.state.is_terminal():
                 self._set_future_state(future, FutureState.CANCELED)
