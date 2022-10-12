@@ -74,11 +74,11 @@ class StateMachineResolver(Resolver, abc.ABC):
             raise e
 
     def _register_signal_handlers(self):
-        for signum in {signal.SIGINT, signal.SIGTERM, signal.SIGKILL}:
+        for signum in {signal.SIGINT, signal.SIGTERM}:
             current_handler = signal.getsignal(signum)
 
             def _new_handler(signum, frame):
-                if current_handler:
+                if callable(current_handler):
                     current_handler(signum, frame)
                 self._handle_sigint_cancel(signum, frame)
 
@@ -112,9 +112,7 @@ class StateMachineResolver(Resolver, abc.ABC):
 
     def _handle_sigint_cancel(self, signum, frame):
         logger.warning("Received SIGINT, canceling resolution...")
-        self._cancel_futures()
         self._resolution_did_cancel()
-        exit(1)
 
     def _cancel_futures(self):
         for future in self._futures:
