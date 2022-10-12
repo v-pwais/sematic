@@ -75,14 +75,7 @@ class StateMachineResolver(Resolver, abc.ABC):
 
     def _register_signal_handlers(self):
         for signum in {signal.SIGINT, signal.SIGTERM}:
-            current_handler = signal.getsignal(signum)
-
-            def _new_handler(signum, frame):
-                if callable(current_handler):
-                    current_handler(signum, frame)
-                self._handle_sigint_cancel(signum, frame)
-
-            signal.signal(signum, _new_handler)
+            signal.signal(signum, self._handle_sig_cancel)
 
     def _detach_resolution(self, future: AbstractFuture) -> str:
         raise NotImplementedError()
@@ -110,7 +103,7 @@ class StateMachineResolver(Resolver, abc.ABC):
     def _wait_for_scheduled_run(self) -> None:
         pass
 
-    def _handle_sigint_cancel(self, signum, frame):
+    def _handle_sig_cancel(self, signum, frame):
         logger.warning("Received SIGINT, canceling resolution...")
         self._resolution_did_cancel()
 
