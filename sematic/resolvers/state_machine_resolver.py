@@ -58,7 +58,7 @@ class StateMachineResolver(Resolver, abc.ABC):
                         self._resolve_nested_future(future_)
                         continue
 
-                    # unreachable code
+                    # should be unreachable code, here for a sanity check
                     if (
                         future_.state != FutureState.SCHEDULED
                         and not future_.state.is_terminal()
@@ -68,7 +68,7 @@ class StateMachineResolver(Resolver, abc.ABC):
                             " when it should have been already processed"
                         )
 
-                self._wait_for_scheduled_run()
+                self._wait_for_scheduled_runs()
 
             if future.state == FutureState.RESOLVED:
                 self._resolution_did_succeed()
@@ -117,7 +117,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def _wait_for_scheduled_run(self) -> None:
+    def _wait_for_scheduled_runs(self) -> None:
         pass
 
     def _handle_sig_cancel(self, signum, frame):
@@ -250,14 +250,14 @@ class StateMachineResolver(Resolver, abc.ABC):
     def _execute_future(self, future: AbstractFuture) -> None:
         if future.props.inline:
             self._future_will_schedule(future)
-            logger.info("Running inline {}".format(future.calculator))
+            logger.info("Running inline %s", future.calculator)
             self._run_inline(future)
         elif self._can_schedule_future(future):
             self._future_will_schedule(future)
-            logger.info("Scheduling {}".format(future.calculator))
+            logger.info("Scheduling %s", future.calculator)
             self._schedule_future(future)
         else:
-            logger.info("Could not schedule {}".format(future.calculator))
+            logger.info("Currently not scheduling %s", future.calculator)
 
     @typing.final
     def _resolve_nested_future(self, future: AbstractFuture) -> None:
