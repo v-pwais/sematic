@@ -105,7 +105,7 @@ class StateMachineResolver(Resolver, abc.ABC):
                 self._enqueue_future(value)
 
     def _can_schedule_future(self, _: AbstractFuture) -> bool:
-        """Return whether the specified future can be scheduled."""
+        """Returns whether the specified future can be scheduled."""
         return True
 
     @abc.abstractmethod
@@ -248,16 +248,18 @@ class StateMachineResolver(Resolver, abc.ABC):
             self._execute_future(future)
 
     def _execute_future(self, future: AbstractFuture) -> None:
+        if not self._can_schedule_future(future):
+            logger.info("Currently not scheduling %s", future.calculator)
+            return
+
+        self._future_will_schedule(future)
+
         if future.props.inline:
-            self._future_will_schedule(future)
             logger.info("Running inline %s", future.calculator)
             self._run_inline(future)
-        elif self._can_schedule_future(future):
-            self._future_will_schedule(future)
+        else:
             logger.info("Scheduling %s", future.calculator)
             self._schedule_future(future)
-        else:
-            logger.info("Currently not scheduling %s", future.calculator)
 
     @typing.final
     def _resolve_nested_future(self, future: AbstractFuture) -> None:
