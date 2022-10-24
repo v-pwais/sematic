@@ -108,6 +108,7 @@ class StateMachineResolver(Resolver, abc.ABC):
 
     def _can_schedule_future(self, _: AbstractFuture) -> bool:
         """Returns whether the specified future can be scheduled."""
+        logger.error("SHOULD NOT BE HERE!")
         return True
 
     @abc.abstractmethod
