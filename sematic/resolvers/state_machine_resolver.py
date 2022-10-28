@@ -329,10 +329,10 @@ class StateMachineResolver(Resolver, abc.ABC):
             raise ResolutionError(exception_metadata, external_exception_metadata)
 
         if not retry_settings.should_retry(
-            exception_metadata
-        ) or not retry_settings.should_retry(external_exception_metadata):
+            exception_metadata, external_exception_metadata
+        ):
             logging.info(
-                "Retries exhausted or exception not retryable for "
+                "Retries exhausted or exception not retriable for "
                 f"{future.id}, failing now."
             )
             self._fail_future_and_parents(future)
