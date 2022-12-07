@@ -131,6 +131,7 @@ class StateMachineResolver(Resolver, abc.ABC):
         if future in self._futures:
             return
 
+        self._register_external_resources(future)
         self._futures.append(future)
 
         for value in future.kwargs.values():
