@@ -110,13 +110,11 @@ class StateMachineResolver(Resolver, abc.ABC):
             raise e
 
     def _enqueue_root_future(self, future: AbstractFuture):
-        resolved_kwargs = self._get_resolved_kwargs(future)
+        resolved_kwargs = future.props.get_resolved_kwargs()
         if not len(resolved_kwargs) == len(future.kwargs):
             raise ValueError(
                 "All input arguments of your root function should be concrete."
             )
-
-        future.resolved_kwargs = resolved_kwargs
 
         # Cleaning up
         self._futures.clear()
@@ -271,29 +269,9 @@ class StateMachineResolver(Resolver, abc.ABC):
         """
         pass
 
-    @staticmethod
-    def _get_resolved_kwargs(future: AbstractFuture) -> typing.Dict[str, typing.Any]:
-        """
-        Extract only resolved/concrete kwargs.
-        """
-        resolved_kwargs = {}
-        for name, value in future.kwargs.items():
-            if isinstance(value, AbstractFuture):
-                if value.state == FutureState.RESOLVED:
-                    resolved_kwargs[name] = value.value
-            else:
-                resolved_kwargs[name] = value
-
-        return resolved_kwargs
-
     @typing.final
     def _schedule_future_if_args_resolved(self, future: AbstractFuture) -> None:
-        resolved_kwargs = self._get_resolved_kwargs(future)
-
-        all_args_resolved = len(resolved_kwargs) == len(future.kwargs)
-
-        if all_args_resolved:
-            future.resolved_kwargs = resolved_kwargs
+        if future.props.all_args_ready():
             self._execute_future(future)
 
     def _execute_future(self, future: AbstractFuture) -> None:
