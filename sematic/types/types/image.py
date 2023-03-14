@@ -2,8 +2,25 @@
 import hashlib
 from dataclasses import dataclass
 
-# Third-party
-import magic  # type: ignore
+try:
+    # Third-party
+    import magic  # type: ignore
+except ImportError as e:
+
+    # Standard Library
+    import platform
+
+    template = "Sematic requires the `libmagic` package. Please install it{os_message}"
+    mapping = {
+        "Darwin": " with `brew install libmagic`, or with `port install file`",
+        "Linux": (
+            " with `sudo apt-get install libmagic1`, "
+            "or with `sudo yum install file-devel`"
+        ),
+    }
+
+    error_message = template.format(os_message=mapping.get(platform.system(), "."))
+    raise ImportError(error_message) from e
 
 # Sematic
 from sematic.types.registry import SummaryOutput, register_to_json_encodable_summary
