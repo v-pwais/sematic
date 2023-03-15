@@ -158,7 +158,7 @@ The compute characteristics of a single Ray head/worker.
 - **memory_gb** (*float*): Gibibytes of memory for each node
 (supports fractional values). Note: One
 [gibibyte](https://simple.wikipedia.org/wiki/Gibibyte) is
-2<sup>30</sup> bytes.
+`2**30` bytes.
 - **gpu_count** (*int*): The number of GPUs to attach. Not all deployments
 support GPUs, or more than one GPU per node.
 
