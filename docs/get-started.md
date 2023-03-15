@@ -19,7 +19,9 @@ $ pip install sematic
 The above command will also install all required Python dependencies.
 
 Sematic does require an additional system library installed, `libmagic` / `filemagic`,
-which is required by [`python-magic`](https://pypi.org/project/python-magic/):
+which is required by [`python-magic`](https://pypi.org/project/python-magic/), in order
+to render [`Image`](types.md#the-image-type) type artifacts. If you want to use `Image`s,
+you can install the library with:
 
 - MacOs: `brew install libmagic`, or `port install file`
 - Debian: `sudo apt-get install libmagic1`
