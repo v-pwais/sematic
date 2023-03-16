@@ -25,6 +25,7 @@ def sematic_pipeline(
         image_layers = None,
         image_tags = None,
         env = None,
+        insecure_repository = False,
         dev = False):
     """
     A Bazel rule to run a Sematic pipeline.
@@ -62,6 +63,8 @@ def sematic_pipeline(
             to "deps".
 
         env: (optional) mapping of environment variables to set in the container
+
+        insecure_repository: (optional) whether the repository is insecure (i.e. http not https)
 
         dev: (optional) For Sematic dev only. switch between using worker in the installed
         wheel or in the current repo.
@@ -150,6 +153,7 @@ def sematic_pipeline(
             tag = "{}_{}".format(name, tag),
             format = "Docker",
             tags = tags,
+            insecure_repository = insecure_repository,
         )
     
     py_binary(
