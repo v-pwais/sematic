@@ -142,10 +142,13 @@ http_archive(
 
 ## DOCKER RULES
 
-http_archive(
+# TODO: use a release newer than v0.25.0. We need insecure registry support, so we use git_repository().  
+# Restore http_archive() when a new release is available.
+# FMI: https://github.com/bazelbuild/rules_docker/pull/1403
+git_repository(
     name = "io_bazel_rules_docker",
-    sha256 = "b1e80761a8a8243d03ebca8845e9cc1ba6c82ce7c5179ce2b295cd36f7e394bf",
-    urls = ["https://github.com/bazelbuild/rules_docker/releases/download/v0.25.0/rules_docker-v0.25.0.tar.gz"],
+    commit = "704d3a55701ae6719326f49018e15fd8ae230cc4",
+    remote = "https://github.com/bazelbuild/rules_docker",
 )
 
 load(
