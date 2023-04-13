@@ -25,7 +25,7 @@ def sematic_pipeline(
         image_layers = None,
         image_tags = None,
         env = None,
-        insecure_repository = False,
+        insecure_repository = None,
         dev = False):
     """
     A Bazel rule to run a Sematic pipeline.
@@ -64,7 +64,10 @@ def sematic_pipeline(
 
         env: (optional) mapping of environment variables to set in the container
 
-        insecure_repository: (optional) whether the repository is insecure (i.e. http not https)
+        insecure_repository: (optional) Whether the repository is insecure (i.e. http not https).
+            Should only be used if your rules_docker is at a version newer than v0.25.0.
+            Defaults to `None`, which will fall back to `container_push`'s value for this
+            parameter.
 
         dev: (optional) For Sematic dev only. switch between using worker in the installed
         wheel or in the current repo.
@@ -144,6 +147,9 @@ def sematic_pipeline(
 
         push_rule_name = "{}_{}_push".format(name, tag)
         push_rule_names[tag] = [push_rule_name, "{}/{}".format(registry, repository)]
+        extra_push_kwargs = {}
+        if insecure_repository == None:
+            extra_push_kwargs["insecure_repository"] = insecure_repository
 
         container_push(
             name = push_rule_name,
@@ -153,7 +159,7 @@ def sematic_pipeline(
             tag = "{}_{}".format(name, tag),
             format = "Docker",
             tags = tags,
-            insecure_repository = insecure_repository,
+            **extra_push_kwargs,
         )
     
     py_binary(
