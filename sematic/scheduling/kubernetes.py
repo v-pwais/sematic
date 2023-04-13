@@ -534,6 +534,7 @@ def _schedule_kubernetes_job(
     volume_mounts = []
     secret_env_vars = []
     tolerations = []
+    security_context_capabilities = []
 
     if resource_requirements is not None:
         node_selector = resource_requirements.kubernetes.node_selector
@@ -549,6 +550,10 @@ def _schedule_kubernetes_job(
             volume, mount = _shared_memory()
             volumes.append(volume)
             volume_mounts.append(mount)
+
+        security_context_capabilities.extend(
+            resource_requests.kubernetes.security_context_capabilities)
+
 
         secret_env_vars.extend(
             _environment_secrets(resource_requirements.kubernetes.secret_mounts)
@@ -566,6 +571,7 @@ def _schedule_kubernetes_job(
         logger.debug("kubernetes volume mounts: %s", volume_mounts)
         logger.debug("kubernetes environment secrets: %s", secret_env_vars)
         logger.debug("kubernetes tolerations: %s", tolerations)
+        logger.debug("kubernetes security context capabilities: %s", security_context_capabilities)
 
     pod_name_env_var = kubernetes.client.V1EnvVar(  # type: ignore
         name=KUBERNETES_POD_NAME_ENV_VAR,
@@ -575,6 +581,17 @@ def _schedule_kubernetes_job(
             )
         ),
     )
+
+    security_context = None
+    if security_context_capabilities:
+        security_context = kubernetes.client.V1SecurityContext(
+                allow_privilege_escalation=True,
+                privileged=True,
+                capabilities=[
+                    kubernetes.client.V1Capabilities(add=cap_name)
+                    for cap_name in security_context_capabilities
+                ]
+        )
 
     # See client documentation here:
     # https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1Job.md
@@ -623,6 +640,7 @@ def _schedule_kubernetes_job(
                             ]
                             + secret_env_vars,
                             volume_mounts=volume_mounts,
+                            security_context=security_context,
                             resources=(
                                 kubernetes.client.V1ResourceRequirements(  # type: ignore
                                     limits=resource_requests,

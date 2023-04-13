@@ -190,6 +190,11 @@ Information on the Kubernetes resources required.
     instead. Defaults to False. If that file is expanded to more than that limit
     (through external action), then the pod will be terminated.
 
+- `security_context_capabilities`: List[str]
+
+    Run the pod in `privileged` mode with the given capabilities.  For example, if
+    you need your job to FUSE-mount a filesystem, run with 'SYS_ADMIN'.
+
 ### `KubernetesSecretMount`
 
 Information about how to expose Kubernetes secrets when running a Sematic func.

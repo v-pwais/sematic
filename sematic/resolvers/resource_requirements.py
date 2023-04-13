@@ -224,6 +224,9 @@ class KubernetesResourceRequirements:
         memory-backed tmpfs that expands up to half of the available memory file is used
         instead. Defaults to False. If that file is expanded to more than that limit
         (through external action), then the pod will be terminated.
+    security_context_capabilities: List[str]
+        Run the pod in `privileged` mode with the given capabilities.  For example, if
+        you need your job to FUSE-mount a filesystem, run with 'SYS_ADMIN'.
     """
 
     node_selector: Dict[str, str] = field(default_factory=dict)
@@ -231,6 +234,7 @@ class KubernetesResourceRequirements:
     secret_mounts: KubernetesSecretMount = field(default_factory=KubernetesSecretMount)
     tolerations: List[KubernetesToleration] = field(default_factory=list)
     mount_expanded_shared_memory: bool = field(default=False)
+    security_context_capabilities: List[str] = field(default_factory=list)
 
 
 @dataclass

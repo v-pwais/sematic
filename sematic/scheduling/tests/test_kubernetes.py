@@ -88,6 +88,7 @@ def test_schedule_kubernetes_job(k8s_batch_client, mock_kube_config):
                 KubernetesToleration(),
             ],
             mount_expanded_shared_memory=True,
+            security_context_capabilities=['SYS_ADMIN'],
         )
     )
 
@@ -156,6 +157,8 @@ def test_schedule_kubernetes_job(k8s_batch_client, mock_kube_config):
     assert tolerations[1].effect is None
     assert tolerations[1].operator == "Equal"
     assert tolerations[1].toleration_seconds is None
+
+    # TODO test security_context_capabilities ?
 
 
 IS_ACTIVE_CASES = [
