@@ -6,16 +6,18 @@ import datetime
 import enum
 import json
 import secrets
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, List, Optional, Tuple
 
 # Sematic
 from sematic.abstract_future import AbstractFuture, FutureState, make_future_id
 from sematic.db.models.artifact import Artifact
 from sematic.db.models.edge import Edge
+from sematic.db.models.job import Job
 from sematic.db.models.resolution import Resolution, ResolutionStatus
 from sematic.db.models.run import Run
 from sematic.db.models.user import User
+from sematic.scheduling.job_details import JobDetails, JobKindString, JobStatus
 from sematic.types.serialization import (
     get_json_encodable_summary,
     type_from_json_encodable,
@@ -50,6 +52,8 @@ def make_run_from_future(future: AbstractFuture) -> Run:
         created_at=datetime.datetime.utcnow(),
         updated_at=datetime.datetime.utcnow(),
         cache_key=None,
+        # the user_id is overwritten on the API call based on the user's API key
+        user_id=None,
     )
 
     # Set this outside the constructor because the constructor expects
@@ -91,6 +95,8 @@ def clone_root_run(run: Run, edges: List[Edge]) -> Tuple[Run, List[Edge]]:
         source_code=run.source_code,
         container_image_uri=run.container_image_uri,
         cache_key=run.cache_key,
+        # the user_id is overwritten on the API call based on the user's API key
+        user_id=None,
     )
 
     # Set this outside the constructor because the constructor expects
@@ -137,6 +143,8 @@ def clone_resolution(resolution: Resolution, root_id: str) -> Resolution:
         container_image_uris=resolution.container_image_uris,
         client_version=resolution.client_version,
         cache_namespace=resolution.cache_namespace,
+        # the user_id is overwritten on the API call based on the user's API key
+        user_id=None,
     )
 
     # Set this outside the constructor because the constructor expects
@@ -145,6 +153,44 @@ def clone_resolution(resolution: Resolution, root_id: str) -> Resolution:
     cloned_resolution.git_info = resolution.git_info
 
     return cloned_resolution
+
+
+def make_job(
+    name: str,
+    namespace: str,
+    run_id: str,
+    status: JobStatus,
+    details: JobDetails,
+    kind: JobKindString,
+) -> Job:
+    """Make a new Job using the given status and details.
+
+    Parameters
+    ----------
+    name:
+        The name of the K8s job.
+    namespace:
+        The namespace of the K8s job.
+    run_id:
+        The id of the run the job is associated with.
+    status:
+        The status of the job.
+    details:
+        Details about the job.
+    kind:
+        Whether the job is for a resolution or a run.
+    """
+    return Job(
+        name=name,
+        namespace=namespace,
+        run_id=run_id,
+        last_updated_epoch_seconds=status.last_updated_epoch_seconds,
+        state=status.state,
+        kind=kind,
+        message=status.message,
+        detail_serialization=asdict(details),
+        status_history_serialization=[asdict(status)],
+    )
 
 
 def make_func_path(future: AbstractFuture) -> str:

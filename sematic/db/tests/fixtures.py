@@ -1,4 +1,5 @@
 # Standard Library
+import time
 import uuid
 from typing import Any
 
@@ -11,8 +12,11 @@ import testing.postgresql  # type: ignore
 import sematic.db.db as db
 from sematic.abstract_future import FutureState
 from sematic.db.models.external_resource import ExternalResource
-from sematic.db.models.factories import make_artifact, make_user
+from sematic.db.models.factories import make_artifact
+from sematic.db.models.factories import make_job as factory_make_job
+from sematic.db.models.factories import make_user
 from sematic.db.models.git_info import GitInfo
+from sematic.db.models.job import Job
 from sematic.db.models.resolution import Resolution, ResolutionKind, ResolutionStatus
 from sematic.db.models.run import Run
 from sematic.db.queries import (
@@ -26,6 +30,12 @@ from sematic.plugins.abstract_external_resource import AbstractExternalResource
 from sematic.resolvers.resource_requirements import (
     KubernetesResourceRequirements,
     ResourceRequirements,
+)
+from sematic.scheduling.job_details import (
+    JobDetails,
+    JobKind,
+    JobStatus,
+    KubernetesJobState,
 )
 from sematic.tests.fixtures import test_storage  # noqa: F401
 
@@ -109,6 +119,23 @@ def test_db():
         db._db_instance = original_db
 
 
+def make_job(**kwargs) -> Job:
+    final_kwargs = dict(
+        name="foo",
+        namespace="bar",
+        run_id="abc123",
+        status=JobStatus(
+            state=KubernetesJobState.Requested,  # type: ignore
+            message="Just created",
+            last_updated_epoch_seconds=time.time(),
+        ),
+        details=JobDetails(try_number=0),
+        kind=JobKind.run,
+    )
+    final_kwargs.update(kwargs)
+    return factory_make_job(**final_kwargs)  # type: ignore
+
+
 def make_run(**kwargs) -> Run:
     id = uuid.uuid4().hex
     run = Run(
@@ -123,6 +150,7 @@ def make_run(**kwargs) -> Run:
         tags=["foo", "bar"],
         source_code="def foo(): pass",
         cache_key=None,
+        user_id=None,
     )
     run.resource_requirements = ResourceRequirements(
         kubernetes=KubernetesResourceRequirements(
@@ -145,6 +173,7 @@ def make_resolution(**kwargs) -> Resolution:
         container_image_uris={"default": "some.uri"},
         container_image_uri="some.uri",
         settings_env_vars={"MY_SETTING": "MY_VALUE"},
+        user_id=None,
     )
 
     # Set this outside the constructor because the constructor expects
@@ -188,6 +217,15 @@ def persisted_run(run, test_db, allow_any_run_state_transition) -> Run:  # noqa:
 
 
 @pytest.fixture
+def persisted_run_w_user(
+    persisted_user, test_db, allow_any_run_state_transition
+) -> Run:  # noqa: F811
+    # run's user_id is a foreign key to the users table,
+    # so we need a persisted user to get a persisted run with a user.
+    return save_run(make_run(user_id=persisted_user.id))
+
+
+@pytest.fixture
 def resolution() -> Resolution:
     return make_resolution()
 
@@ -201,11 +239,37 @@ def persisted_resolution(persisted_run, test_db) -> Resolution:
 
 
 @pytest.fixture
+def persisted_resolution_w_user(
+    persisted_run_w_user, persisted_user, test_db
+) -> Resolution:
+    # resolution's key is a foreign key to the runs table,
+    # so we need a persisted run to get a persisted resolution.
+    # resolution's user_id is a foreign key to the users table,
+    # so we need a persisted user to get a persisted resolution with a user.
+    resolution = make_resolution(
+        root_id=persisted_run_w_user.id, user_id=persisted_user.id
+    )
+    return save_resolution(resolution)
+
+
+@pytest.fixture
 def persisted_user(test_db):  # noqa: F811
     user = make_user(
         email="george@example.com",
         first_name="George",
         last_name="Harrison",
+        avatar_url="https://avatar",
+    )
+    save_user(user)
+    return user
+
+
+@pytest.fixture
+def other_persisted_user(test_db):  # noqa: F811
+    user = make_user(
+        email="ringo@example.com",
+        first_name="Ringo",
+        last_name="Starr",
         avatar_url="https://avatar",
     )
     save_user(user)

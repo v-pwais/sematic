@@ -39,6 +39,12 @@ sematic_py_lib(
         "//sematic/types:init",
         "//sematic/utils:exceptions",
     ],
+    pip_deps = [
+        "gevent",
+    ],
+    data = [
+        "//:sematic.pth",
+    ]
 )
 
 sematic_py_lib(
@@ -77,6 +83,7 @@ sematic_py_lib(
         "//sematic/db/models:run",
         "//sematic/db/models:user",
         "//sematic/plugins:abstract_external_resource",
+        "//sematic/scheduling:job_details",
         "//sematic/utils:retry",
     ],
 )
@@ -105,7 +112,8 @@ sematic_py_lib(
         "//sematic/plugins:abstract_storage",
         "//sematic/plugins/storage:local_storage",
         "//sematic/resolvers:cloud_resolver",
-        "//sematic/scheduling:external_job",
+        "//sematic/resolvers:log_streamer",
+        "//sematic/scheduling:job_details",
     ],
 )
 

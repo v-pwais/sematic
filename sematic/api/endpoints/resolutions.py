@@ -6,7 +6,7 @@ Module keeping all /api/v*/runs/* API endpoints.
 import logging
 from datetime import datetime
 from http import HTTPStatus
-from typing import Optional
+from typing import Optional, Tuple, Union
 
 # Third-party
 import flask
@@ -24,20 +24,25 @@ from sematic.api.endpoints.events import (
 )
 from sematic.api.endpoints.payloads import get_resolution_payload
 from sematic.api.endpoints.request_parameters import jsonify_error
+from sematic.config.user_settings import UserSettingsVar
 from sematic.db.models.factories import clone_resolution, clone_root_run
 from sematic.db.models.resolution import InvalidResolution, Resolution, ResolutionStatus
 from sematic.db.models.run import Run
 from sematic.db.models.user import User
 from sematic.db.queries import (
+    count_jobs_by_run_id,
     get_graph,
+    get_jobs_by_run_id,
     get_resolution,
     get_resources_by_root_id,
     get_run,
     get_run_graph,
     save_graph,
+    save_job,
     save_resolution,
 )
 from sematic.plugins.abstract_publisher import get_publishing_plugins
+from sematic.scheduling.job_details import JobKind
 from sematic.scheduling.job_scheduler import schedule_resolution
 from sematic.scheduling.kubernetes import cancel_job
 
@@ -55,9 +60,7 @@ def get_resolution_endpoint(user: Optional[User], resolution_id: str) -> flask.R
             HTTPStatus.NOT_FOUND,
         )
 
-    payload = dict(
-        content=get_resolution_payload(resolution),
-    )
+    payload = dict(content=get_resolution_payload(resolution))
 
     return flask.jsonify(payload)
 
@@ -78,14 +81,19 @@ def put_resolution_endpoint(user: Optional[User], resolution_id: str) -> flask.R
 
     resolution_json_encodable = flask.request.json["resolution"]
     resolution = Resolution.from_json_encodable(resolution_json_encodable)
+
+    resolution, updated = _update_resolution_user(resolution=resolution, user=user)
+    if updated:
+        logger.debug(
+            "Updated Resolution %s User to %s", resolution.root_id, resolution.user_id
+        )
+
     logger.info(
-        "Attempting to update resolution %s. Status: %s",
+        "Attempting to update resolution %s; status: %s; user: %s",
         resolution.root_id,
         resolution.status,
+        resolution.user_id,
     )
-
-    if user is not None:
-        resolution.user_id = user.id
 
     if not resolution.root_id == resolution_id:
         message = (
@@ -93,10 +101,7 @@ def put_resolution_endpoint(user: Optional[User], resolution_id: str) -> flask.R
             f"the one from the endpoint called ({resolution_id})"
         )
         logger.warning(message)
-        return jsonify_error(
-            message,
-            HTTPStatus.BAD_REQUEST,
-        )
+        return jsonify_error(message, HTTPStatus.BAD_REQUEST)
 
     try:
         root_run = get_run(resolution_id)
@@ -146,17 +151,20 @@ def put_resolution_endpoint(user: Optional[User], resolution_id: str) -> flask.R
             # Note: This message can be used to extract information about pipeline
             # status for usage in dashboards. Some users may be leveraging it for
             # such purposes, so think carefully before changing/removing it.
-            was_remote = len(resolution.external_jobs)
-            duration_seconds = None
+            was_remote = (
+                count_jobs_by_run_id(resolution.root_id, kind=JobKind.resolver) > 0
+            )
+            duration_seconds: Union[float, str] = "UNKNOWN"
             if root_run.started_at is not None:
                 duration_seconds = (
                     datetime.utcnow() - root_run.started_at
                 ).total_seconds()
+
             logger.info(
                 "%s resolution %s for pipeline %s terminated with "
                 "root run in state %s. The duration was %s seconds. "
-                "Git dirty: %s . Git branch: '%s'"
-                "The root run had tags: %s",
+                "Git dirty: %s . Git branch: '%s' . "
+                "The root run had tags: %s .",
                 "Remote" if was_remote else "Local",
                 resolution.root_id,
                 root_run.calculator_path,
@@ -169,7 +177,7 @@ def put_resolution_endpoint(user: Optional[User], resolution_id: str) -> flask.R
         try:
             _cancel_non_terminal_runs(resolution.root_id)
         except Exception as e:
-            logger.exception("Error when trying to cancel runs in resolution: %s", e)
+            logger.exception("Error when trying to cancel runs in resolution:", e)
 
     save_resolution(resolution)
     _publish_resolution_event(resolution)
@@ -193,15 +201,31 @@ def schedule_resolution_endpoint(
         if "rerun_from" in flask.request.json:
             rerun_from = flask.request.json["rerun_from"]
 
-    resolution = schedule_resolution(
-        resolution=resolution, max_parallelism=max_parallelism, rerun_from=rerun_from
+    jobs = get_jobs_by_run_id(resolution_id, kind=JobKind.resolver)
+    if len(jobs) != 0:
+        return jsonify_error(
+            f"Resolution {resolution_id} was already scheduled",
+            status=HTTPStatus.BAD_REQUEST,
+        )
+
+    resolution, updated = _update_resolution_user(resolution=resolution, user=user)
+    if updated:
+        logger.debug(
+            "Updated Resolution %s User to %s", resolution.root_id, resolution.user_id
+        )
+        save_resolution(resolution)
+
+    resolution, post_schedule_job = schedule_resolution(
+        resolution=resolution,
+        max_parallelism=max_parallelism,
+        rerun_from=rerun_from,
     )
 
+    logger.info("Scheduled resolution with job %s", post_schedule_job.identifier())
     save_resolution(resolution)
+    save_job(post_schedule_job)
 
-    payload = dict(
-        content=get_resolution_payload(resolution),
-    )
+    payload = dict(content=get_resolution_payload(resolution))
 
     return flask.jsonify(payload)
 
@@ -237,18 +261,23 @@ def rerun_resolution_endpoint(
 
     save_graph(runs=[root_run], edges=edges, artifacts=[])
 
-    resolution = clone_resolution(original_resolution, root_id=root_run.id)
+    resolution = clone_resolution(resolution=original_resolution, root_id=root_run.id)
 
-    if user is not None:
-        resolution.user_id = user.id
+    resolution, updated = _update_resolution_user(resolution=resolution, user=user)
+    if updated:
+        logger.debug(
+            "Updated resolution %s user to %s", resolution.root_id, resolution.user_id
+        )
+        save_resolution(resolution)
 
-    resolution = schedule_resolution(resolution, rerun_from=rerun_from)
+    resolution, post_schedule_job = schedule_resolution(
+        resolution=resolution, rerun_from=rerun_from
+    )
 
     save_resolution(resolution)
+    save_job(post_schedule_job)
 
-    payload = dict(
-        content=get_resolution_payload(resolution),
-    )
+    payload = dict(content=get_resolution_payload(resolution))
 
     broadcast_pipeline_update(calculator_path=root_run.calculator_path, user=user)
 
@@ -281,10 +310,11 @@ def cancel_resolution_endpoint(
 
     root_run = get_run(resolution.root_id)
 
-    jobs = []
-    for external_job in resolution.external_jobs:
-        jobs.append(cancel_job(external_job))
-    resolution.external_jobs = jobs  # type: ignore
+    jobs = get_jobs_by_run_id(resolution.root_id, kind=JobKind.resolver)
+    for job in jobs:
+        logger.info("Canceling %s", job.identifier())
+        post_cancel_job = cancel_job(job)
+        save_job(post_cancel_job)
 
     resolution.status = ResolutionStatus.CANCELED
     save_resolution(resolution)
@@ -296,7 +326,9 @@ def cancel_resolution_endpoint(
         root_id=resolution.root_id, calculator_path=root_run.calculator_path, user=user
     )
 
-    return flask.jsonify(dict(content=get_resolution_payload(resolution)))
+    payload = dict(content=get_resolution_payload(resolution))
+
+    return flask.jsonify(payload)
 
 
 @sematic_api.route(
@@ -339,11 +371,38 @@ def _cancel_non_terminal_runs(root_id):
     )
 
     for run in unfinished_runs:
-        jobs = []
-        for external_job in run.external_jobs:
-            jobs.append(cancel_job(external_job))
-        run.external_jobs = jobs
-
         run.future_state = FutureState.CANCELED
+        run.failed_at = datetime.utcnow()
 
     save_graph(unfinished_runs, [], [])
+
+    for run in unfinished_runs:
+        for job in get_jobs_by_run_id(run.id):
+            logger.info("Canceling %s", job.identifier())
+            save_job(cancel_job(job))
+
+
+def _update_resolution_user(
+    resolution: Resolution, user: Optional[User]
+) -> Tuple[Resolution, bool]:
+    """
+    Updates the Resolution's User details, returning the updated Resolution, and whether
+    any changes were actually made.
+    """
+    var_key = str(UserSettingsVar.SEMATIC_API_KEY.value)
+
+    if user is None:
+        if resolution.user_id is None:
+            return resolution, False
+
+        resolution.user_id = None
+        del resolution.settings_env_vars[var_key]
+        return resolution, True
+
+    if user.id == resolution.user_id:
+        return resolution, False
+
+    resolution.user_id = user.id
+    resolution.settings_env_vars[var_key] = user.api_key
+
+    return resolution, True

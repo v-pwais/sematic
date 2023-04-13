@@ -3,6 +3,8 @@ Module holding common DB queries.
 """
 # Standard Library
 import logging
+from collections import defaultdict
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
 # Third-party
@@ -16,14 +18,14 @@ from sematic.db.db import db
 from sematic.db.models.artifact import Artifact
 from sematic.db.models.edge import Edge
 from sematic.db.models.external_resource import ExternalResource
+from sematic.db.models.job import Job
 from sematic.db.models.note import Note
 from sematic.db.models.resolution import Resolution
 from sematic.db.models.run import Run
 from sematic.db.models.runs_external_resource import RunExternalResource
 from sematic.db.models.user import User
 from sematic.plugins.abstract_external_resource import ResourceState
-from sematic.scheduling.external_job import ExternalJob
-from sematic.types.serialization import value_from_json_encodable
+from sematic.scheduling.job_details import JobKind, JobKindString
 from sematic.utils.exceptions import IllegalStateTransitionError
 
 logger = logging.getLogger(__name__)
@@ -136,7 +138,7 @@ def get_run(run_id: str) -> Run:
 
 def get_run_status_details(
     run_ids: List[str],
-) -> Dict[str, Tuple[FutureState, List[ExternalJob]]]:
+) -> Dict[str, Tuple[FutureState, List[Job]]]:
     """
     Get information about runs' statuses from the DB.
 
@@ -156,22 +158,69 @@ def get_run_status_details(
     jobs for the run (if any exist)
     """
     with db().get_session() as session:
-        query_results = (
-            session.query(Run.id, Run.future_state, Run.external_jobs_json)
+        query_results = list(
+            session.query(Run.id, Run.future_state, Job)
+            .outerjoin(Job, Job.run_id == Run.id, full=True)
             .filter(Run.id.in_(run_ids))
+            # Job kind can be None when there are no jobs for the run yet.
+            # We still want to return the future state in that case. No actual
+            # row in the Job table will have a null kind/null run id.
+            # It appears that way here merely due to the outer join.
+            .filter(sqlalchemy.or_(Job.kind == JobKind.run, Job.kind.is_(None)))
             .all()
         )
-        result_dict = {}
-        for run_id, state_string, jobs_encodable in query_results:
-            if jobs_encodable is None:
-                jobs = []
-            else:
-                jobs = [
-                    value_from_json_encodable(job, ExternalJob)
-                    for job in jobs_encodable
-                ]
-            result_dict[run_id] = (FutureState[state_string], jobs)
-    return result_dict
+
+        run_ids_to_jobs_list = defaultdict(list)
+        for run_id, _, job in query_results:
+            if job is None:
+                continue
+            run_ids_to_jobs_list[run_id].append(job)
+
+    future_state_and_jobs_by_run_id: Dict[str, Tuple[FutureState, List[Job]]] = {
+        run_id: (FutureState[future_state], run_ids_to_jobs_list[run_id])
+        for run_id, future_state, _ in query_results  # type: ignore
+    }
+    return future_state_and_jobs_by_run_id
+
+
+@dataclass
+class BasicPipelineMetrics:
+    count_by_state: Dict[str, int]
+    avg_runtime_children: Dict[str, float]
+    total_count: int
+
+
+def get_basic_pipeline_metrics(calculator_path: str):
+    with db().get_session() as session:
+        count_by_state = list(
+            session.query(Run.future_state, sqlalchemy.func.count())
+            .filter(Run.calculator_path == calculator_path)
+            .group_by(Run.future_state)
+        )
+
+        RootRun = sqlalchemy.orm.aliased(Run)
+        avg_runtime_children = list(
+            session.query(
+                Run.calculator_path,
+                sqlalchemy.func.avg(
+                    sqlalchemy.func.extract("epoch", Run.resolved_at)
+                    - sqlalchemy.func.extract("epoch", Run.started_at)
+                ),
+            )
+            .join(RootRun, Run.root_id == RootRun.id)
+            .filter(
+                RootRun.calculator_path == calculator_path, Run.resolved_at is not None
+            )
+            .group_by(Run.calculator_path)
+        )
+
+    total_count = sum([count for _, count in count_by_state])
+
+    return BasicPipelineMetrics(
+        total_count=total_count,
+        count_by_state={state: count for state, count in count_by_state},
+        avg_runtime_children={path: runtime for path, runtime in avg_runtime_children},
+    )
 
 
 def save_run(run: Run) -> Run:
@@ -188,7 +237,6 @@ def save_run(run: Run) -> Run:
     Run
         saved run
     """
-    _assert_external_jobs_not_removed([run])
     with db().get_session() as session:
         existing_run_future_state = (
             session.query(Run.future_state).filter(Run.id == run.id).one_or_none()
@@ -219,6 +267,105 @@ def save_run(run: Run) -> Run:
         session.refresh(run)
 
     return run
+
+
+def get_job(job_name: str, job_namespace: str) -> Optional[Job]:
+    """Get a job by name and namespace (or None if it doesn't exist)."""
+    with db().get_session() as session:
+        return (
+            session.query(Job)
+            .filter(Job.name == job_name)
+            .filter(Job.namespace == job_namespace)
+            .one_or_none()
+        )
+
+
+def save_job(job: Job) -> Job:
+    """Save a job to the db, updating an existing one if present."""
+    with db().get_session() as session:
+        # do this instead of get_job so we can keep it in one
+        # session to avoid race conditions.
+        existing_job = (
+            session.query(Job)
+            .filter(Job.name == job.name)
+            .filter(Job.namespace == job.namespace)
+            .one_or_none()
+        )
+
+        if existing_job is not None:
+            # do this to ensure that we are updating the history based on what's
+            # actually already in the DB.
+            existing_job.details = job.details
+            existing_job.update_status(job.latest_status)
+            job = existing_job
+
+        session.merge(job)
+        session.commit()
+
+        return job
+
+
+def get_jobs_by_run_id(run_id: str, kind: JobKindString = JobKind.run) -> List[Job]:
+    """Get jobs from the DB by source run id.
+
+    Parameters
+    ----------
+    run_id:
+        The id of the run to get jobs for
+    kind:
+        The kind of jobs to get. Can be either "run" to get
+        jobs for the run itself, or "resolution" to get jobs
+        for the resolution associated with the run.
+
+    Returns
+    -------
+    The job(s) associated with the run.
+    """
+    with db().get_session() as session:
+        return list(
+            session.query(Job)
+            .filter(Job.run_id == run_id)
+            .filter(Job.kind == kind)
+            .all()
+        )
+
+
+def count_jobs_by_run_id(run_id: str, kind: JobKindString = JobKind.run) -> int:
+    """Count jobs from the DB by source run id.
+
+    Parameters
+    ----------
+    run_id:
+        The id of the run to get jobs for
+    kind:
+        The kind of jobs to get. Can be either "run" to get
+        jobs for the run itself, or "resolution" to get jobs
+        for the resolution associated with the run.
+
+    Returns
+    -------
+    The number of jobs associated with the run.
+    """
+    with db().get_session() as session:
+        return (
+            session.query(Job)
+            .filter(Job.run_id == run_id)
+            .filter(Job.kind == kind)
+            .count()
+        )
+
+
+# TODO: Remove this function
+# https://github.com/sematic-ai/sematic/issues/710
+# Will also need to be removed if this issue is fixed:
+# https://github.com/sematic-ai/sematic/issues/302
+def run_has_legacy_jobs(run_id: str) -> bool:
+    with db().get_session() as session:
+        statement = sqlalchemy.text(
+            "SELECT external_jobs_json FROM runs WHERE id=:run_id"
+        ).bindparams(run_id=run_id)
+        jobs = list(session.execute(statement))[0]["external_jobs_json"]
+        return jobs is not None and len(jobs) > 0
 
 
 def save_external_resource_record(record: ExternalResource):
@@ -350,7 +497,6 @@ def save_graph(runs: List[Run], artifacts: List[Artifact], edges: List[Edge]):
     """
     Update a graph.
     """
-    _assert_external_jobs_not_removed(runs)
     with db().get_session() as session:
         for run in runs:
             session.merge(run)
@@ -379,35 +525,6 @@ def _save_artifact(artifact: Artifact, session: sqlalchemy.orm.Session) -> Artif
         return previous_artifact
 
     return session.merge(artifact)
-
-
-def _assert_external_jobs_not_removed(runs):
-    run_ids = [run.id for run in runs]
-    runs_by_id = {run.id: run for run in runs}
-    with db().get_session() as session:
-        existing_run_jobs_all_runs = (
-            session.query(Run.id, Run.external_jobs_json)
-            .filter(Run.id.in_(run_ids))
-            .all()
-        )
-
-        # it's ok if there isn't an existing run for one of the passed-in runs.
-        # the passed-in runs may be new.
-        for existing_run_id, existing_run_jobs_json in existing_run_jobs_all_runs:
-            if existing_run_jobs_json is None:
-                existing_run_jobs = []
-            else:
-                existing_run_jobs = [
-                    value_from_json_encodable(job, ExternalJob)
-                    for job in existing_run_jobs_json
-                ]
-            run = runs_by_id[existing_run_id]
-            if len(run.external_jobs) < len(existing_run_jobs):
-                raise ValueError(
-                    f"Cannot remove existing external jobs from {run.id}. "
-                    f"Existing run had: {existing_run_jobs}. New "
-                    f"run had: {run.external_jobs}"
-                )
 
 
 Graph = Tuple[List[Run], List[Artifact], List[Edge]]

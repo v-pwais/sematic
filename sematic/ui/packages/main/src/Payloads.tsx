@@ -40,10 +40,12 @@ export type RunGraphPayload = {
 };
 
 export type LogLineResult = {
-  more_before: boolean;
-  more_after: boolean;
+  can_continue_backward: boolean;
+  can_continue_forward: boolean;
   lines: string[];
-  continuation_cursor: string | null;
+  line_ids: number[];
+  forward_cursor_token: string | null;
+  reverse_cursor_token: string | null;
   log_info_message: string | null;
 };
 
@@ -95,3 +97,10 @@ export type Filter = FilterCondition | {
   OR : Array<FilterCondition>
 }
 
+export type BasicMetricsPayload = {
+  content: {
+    avg_runtime_children: {[k: string]: number},
+    count_by_state: {[k: string]: number},
+    total_count: number
+  }
+}

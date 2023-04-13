@@ -5,6 +5,7 @@ sematic_py_lib(
         "sqlalchemy",
         "psycopg2-binary",
     ],
+    # buildifier: leave-alone
     deps = [
         "//sematic/config:config",
     ],
@@ -21,13 +22,13 @@ sematic_py_lib(
         "//sematic/db/models:artifact",
         "//sematic/db/models:edge",
         "//sematic/db/models:external_resource",
+        "//sematic/db/models:job",
         "//sematic/db/models:note",
         "//sematic/db/models:resolution",
         "//sematic/db/models:run",
         "//sematic/db/models:runs_external_resource",
         "//sematic/db/models:user",
         "//sematic/plugins:abstract_external_resource",
-        "//sematic/scheduling:external_job",
         "//sematic/utils:exceptions",
     ],
 )
@@ -51,6 +52,7 @@ sematic_py_lib(
         "click",
         "sqlalchemy",
     ],
+    # buildifier: leave-alone
     deps = [
         # DO NOT add any other dependencies
         # or it may break the sequence of migrations

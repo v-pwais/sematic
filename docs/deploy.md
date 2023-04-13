@@ -1,6 +1,7 @@
 # Deploy Sematic
 
-When you install Sematic the first time, everything runs locally. The web app
+When you install Sematic the first time, according to the instructions from the
+[Get started](get-started.md#installation) section, everything runs locally. The web app
 and your pipelines run locally.
 
 Here is how to deploy Sematic to take full advantage of your cloud resources.
@@ -96,7 +97,7 @@ will need to deploy it on Kubernetes.
 
 Prerequisites:
 
-- A Kubernetes cluster running Kubernetes >=1.21
+- A Kubernetes cluster running Kubernetes >=1.23.  1.24 recommended as officially supported.
 - A Postgres database
 - [Helm](https://helm.sh/docs/intro/install/#helm) &
   [kubectl](https://kubernetes.io/docs/tasks/tools/) installed and
@@ -113,7 +114,7 @@ Configure the contents of `helm/sematic/values.yaml` (see the sections below).
 Once you have set all the values, deploy the Sematic Helm chart to your cluster:
 
 ```
-$ helm install sematic-server sematic/sematic-server \
+$ helm install sematic-server sematic-ai/sematic-server \
         -n <NAMESPACE FOR DEPLOYING> \
         -f <PATH TO YOUR CONFIGURED VALUES YAML FILE>
 ```
@@ -127,8 +128,12 @@ deployment is complete.
 
 ##### Database
 
-In the `values.yaml` file above, the setting `database.url` can be set to the
-fully-qualified URL of your Postgres instance.  It should look similar to the following:
+You should create a separate database and an owner user, in order to ensure the service can perform
+required database schema migrations.
+
+In the `values.yaml` file above, the setting `database.url` can be set to the fully-qualified URL
+of your Postgres database, using the credentials of the owner user.  It should look similar to the
+following:
 
 ```
 postgresql://<username>:<password>@<hostname>:<port>/<database>
@@ -176,12 +181,7 @@ authentication behavior for your deployed app.
 - `auth.authorized_email_domain` denies access to users whose email is not of
   said domain.
 
-##### SSL
-
-If you wish to put your Kubernetes Sematic deployment behind SSL, the recommended way to do
-this is to set up an [ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
-that points to the service (named `sematic-server`) deployed by the Helm chart,
-and set up your ingress to use SSL.
+##### Ingress
 
 The Helm chart can create an ingress for you by setting `ingress.create` to `true`, and by
 specifying the ingress domain information like so in the `ingress.hosts` setting:
@@ -193,6 +193,13 @@ specifying the ingress domain information like so in the `ingress.hosts` setting
         - path: /
           pathType: ImplementationSpecific
 ```
+
+##### SSL
+
+If you wish to put your Kubernetes Sematic deployment behind SSL, the recommended way to do
+this is to set up an [ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/)
+that points to the service (named `sematic-server`) deployed by the Helm chart,
+and set up your ingress to use SSL.
 
 ##### Additional configuration options
 
@@ -208,7 +215,7 @@ At this point you should be able to run pipelines that are tracked by Sematic.
 In order to write metadata to the deployed API, simply do:
 
 ```shell
-$ sematic server-settings set SEMATIC_API_ADDRESS http://my-remote-server.dev
+$ sematic settings set SEMATIC_API_ADDRESS http://my-remote-server.dev
 ```
 
 This is required regardless of whether you deployed using Option 1 or Option 2.

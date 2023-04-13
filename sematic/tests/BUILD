@@ -121,7 +121,7 @@ pytest_test(
         "//sematic/db:queries",
         "//sematic/db/tests:fixtures",
         "//sematic/resolvers:cloud_resolver",
-        "//sematic/scheduling:external_job",
+        "//sematic/scheduling:job_details",
         "//sematic/tests:fixtures",
     ],
 )
@@ -132,6 +132,7 @@ pytest_test(
     data = [
         "//:docs/changelog.md",
         "//:helm/sematic-server/Chart.yaml",
+        "//:README.md",
     ],
     env = {"BAZEL_WHEEL_VERSION": wheel_version_string},
     pip_deps = [

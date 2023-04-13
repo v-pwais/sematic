@@ -1,6 +1,7 @@
+
 sematic_py_lib(
-    name = "external_job",
-    srcs = ["external_job.py"],
+    name = "job_details",
+    srcs = ["job_details.py"],
     deps = [
         "//sematic/utils:exceptions",
     ],
@@ -11,10 +12,10 @@ sematic_py_lib(
     srcs = ["job_scheduler.py"],
     deps = [
         "//sematic:abstract_future",
+        "//sematic/db/models:job",
         "//sematic/db/models:resolution",
         "//sematic/db/models:run",
         "//sematic/scheduling:kubernetes",
-        "//sematic/scheduling:external_job",
     ],
 )
 
@@ -27,9 +28,11 @@ sematic_py_lib(
         "//sematic/config:user_settings",
         "//sematic/config:server_settings",
         "//sematic/config:settings",
+        "//sematic/db/models:factories",
+        "//sematic/db/models:job",
         "//sematic/plugins/storage:s3_storage",
         "//sematic/resolvers:resource_requirements",
-        "//sematic/scheduling:external_job",
+        "//sematic/scheduling:job_details",
         "//sematic/utils:exceptions",
         "//sematic/utils:retry",
     ],

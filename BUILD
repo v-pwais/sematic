@@ -8,9 +8,11 @@ load("@pip_dependencies3_8//:requirements.bzl", entry_point3_8="entry_point")
 load("@python3_8//:defs.bzl", interpreter3_8="interpreter")
 
 
+exports_files(["README.md"])
 exports_files(["README.rst"])
 exports_files(["docs/changelog.md"])
 exports_files(["helm/sematic-server/Chart.yaml"])
+exports_files(["sematic.pth"])
 
 stamp_build_setting(name = "stamp")
 

@@ -2,7 +2,7 @@ const path = require("path");
 const TsconfigPathsPlugin = require("tsconfig-paths-webpack-plugin");
 module.exports = {
   "stories": ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|ts|tsx)"],
-  "addons": ["@storybook/addon-links", "@storybook/addon-essentials", "@storybook/addon-interactions", "@storybook/preset-create-react-app", "@storybook/addon-mdx-gfm"],
+  "addons": ["@storybook/addon-links", "@storybook/addon-essentials", "@storybook/addon-interactions", "@storybook/preset-create-react-app"],
   "framework": {
     name: "@storybook/react-webpack5",
     options: {}
@@ -24,6 +24,8 @@ module.exports = {
       configFile: path.resolve(__dirname, "../tsconfig.json"),
       extensions: config.resolve.extensions
     })];
+    const filteredPlugins = config.plugins.filter(p => p.constructor.name !== 'ForkTsCheckerWebpackPlugin');
+    config.plugins = filteredPlugins;
 
     // Fix wrong project root
     const babelLoaderRule = config.module.rules.find(
@@ -58,6 +60,6 @@ module.exports = {
     return config;
   },
   docs: {
-    autodocs: true
+    autodocs: false
   }
 };

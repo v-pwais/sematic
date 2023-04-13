@@ -1,7 +1,8 @@
-import { useMemo } from "react";
-import { atomWithHash } from 'jotai-location'
-import { useLocation } from "react-router-dom";
 import { User } from "@sematic/common/src/Models";
+import { atomWithHash } from 'jotai-location';
+import memoize from 'lodash/memoize';
+import noop from 'lodash/noop';
+import { useMemo } from "react";
 
 interface IFetchJSON {
   url: string;
@@ -59,24 +60,54 @@ export function fetchJSON({
     );
 }
 
+export const getDebugState = memoize(function getDebugState() {
+  const search = window.location.search;
+
+  let debugFlagUrlValue: boolean | null;
+  const strValue = (new URLSearchParams(search)).get('debug')?.toLocaleLowerCase();
+  if (strValue === 'true' || strValue === '1') {
+    debugFlagUrlValue = true;
+  } else if (strValue === 'false' || strValue === '0') {
+    debugFlagUrlValue = false;
+  } else {
+    debugFlagUrlValue = null;
+  };
+
+  const debugFlagLocalStorage = window.localStorage.getItem('debug');
+
+  // if debugFlagUrlValue is set, then set it in localStorage, so that it is memorized across page refreshes
+  if (debugFlagUrlValue !== null && debugFlagLocalStorage !== debugFlagUrlValue.toString()) {
+    window.localStorage.setItem('debug', debugFlagUrlValue.toString());
+  }
+
+  if (debugFlagUrlValue !== null) {
+    return debugFlagUrlValue;
+  }
+
+  if (debugFlagLocalStorage !== null) {
+    return debugFlagLocalStorage === 'true';
+  }
+  return false; // default turning debug flag off
+});
+
+
+const getDevlogger = memoize(function getDevlogger () {
+  const isLoggingExplicitlyTurnedOn = getDebugState();
+
+  if (process.env.NODE_ENV === "development" || isLoggingExplicitlyTurnedOn) {
+    return (...args: any[]) => {
+      console.log(
+        `${(new Date()).toString().replace(/\sGMT.+$/, '')}  DEV DEBUG: `,
+        ...args
+      );
+    }
+  }
+  return noop;
+});
+
+
 export function useLogger() {
-  const { search } = useLocation();
-
-  const isLoggingExplicitlyTurnedOn = useMemo(
-    () => (new URLSearchParams(search)).has('debug'), [search]);
-
-  const devLogger = useMemo(
-    () => {
-      if (process.env.NODE_ENV === "development" || isLoggingExplicitlyTurnedOn) {
-        return (...args: any[]) => {
-          console.log(
-            `${(new Date()).toString().replace(/\sGMT.+$/, '')}  DEV DEBUG: `,
-            ...args
-          );
-        }
-      }
-      return () => { };
-    }, [isLoggingExplicitlyTurnedOn]);
+  const devLogger = useMemo(() => getDevlogger(), []);
 
   return {
     devLogger
@@ -114,4 +145,66 @@ export function abbreviatedUserName(user: User | null): string {
   const {first_name, last_name} = user;
 
   return `${first_name} ${(last_name || "").substring(0, 1)}.`
+}
+
+
+export function durationSecondsToString(durationS: number) : string {
+  const displayH: number = Math.floor(durationS / 3600);
+  const displayM: number = Math.floor((durationS % 3600) / 60);
+  const displayS: number = Math.round(durationS % 60);
+
+  const final = [
+    displayH > 0 ? displayH.toString() + "h" : "",
+    displayM > 0 ? displayM.toString() + "m " : "",
+    displayS > 0 ? displayS.toString() + "s" : "",
+    displayS === 0 ? "<1s" : "",
+  ]
+    .join(" ")
+    .trim();
+
+  return final;
+}
+
+let ID = 0;
+
+export interface ReleaseHandle {
+  (): void;
+}
+export class AsyncInvocationQueue {
+  private queue: any[] = [];
+  private instanceID: number;
+
+  constructor() {
+    this.queue = [];
+    this.instanceID = ID++;
+  }
+
+  async acquire(): Promise<ReleaseHandle> {
+    let resolve: any;
+    const waitingPromise = new Promise((_resolve) => {
+      resolve = _resolve;
+    });
+    this.queue.push(waitingPromise);
+
+    // Wait until all the promises before this one have been resolved
+    while (this.queue.length !== 0) {
+      if (this.queue[0] === waitingPromise) { 
+        break;
+      }
+      await this.queue.shift();
+      // sleep
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    
+    // The resolve function can be used to release to the next item in the queue
+    return resolve;
+  }
+
+  get InstanceID() {
+    return this.instanceID;
+  }
+
+  get IsBusy() {
+    return this.queue.length > 0;
+  }
 }

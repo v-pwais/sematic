@@ -2,9 +2,9 @@
 Sematic Public API
 """
 # Standard Library
-import os
-import platform
-import sys
+import os  # noqa: E402
+import platform  # noqa: E402
+import sys  # noqa: E402
 
 # `urllib` invokes the underlying OS framework to get configured system proxies.
 # On MacOS, this call causes the OS to immediately kill the `gunicorn` WSGI worker because
