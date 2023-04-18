@@ -534,7 +534,7 @@ def _schedule_kubernetes_job(
     volume_mounts = []
     secret_env_vars = []
     tolerations = []
-    security_context_capabilities = []
+    security_context = None
 
     if resource_requirements is not None:
         node_selector = resource_requirements.kubernetes.node_selector
@@ -551,9 +551,23 @@ def _schedule_kubernetes_job(
             volumes.append(volume)
             volume_mounts.append(mount)
 
-        security_context_capabilities.extend(
-            resource_requests.kubernetes.security_context_capabilities)
-
+        if resource_requirements.kubernetes.security_context is not None:
+            if not get_server_setting(
+                ServerSettingsVar.ALLOW_CUSTOM_SECURITY_CONTEXTS, False
+            ):
+                raise ValueError(
+                    "User tried to customize the security context for their "
+                    "Sematic function, but ALLOW_CUSTOM_SECURITY_CONTEXTS is "
+                    "not enabled."
+                )
+            sc = resource_requirements.kubernetes.security_context
+            security_context = kubernetes.client.V1SecurityContext(
+                allow_privilege_escalation=sc.allow_privilege_escalation,
+                privileged=sc.privileged,
+                capabilities=kubernetes.client.V1Capabilities(
+                    add=sc.capabilities.add, drop=sc.capabilities.drop
+                ),
+            )
 
         secret_env_vars.extend(
             _environment_secrets(resource_requirements.kubernetes.secret_mounts)
@@ -571,7 +585,7 @@ def _schedule_kubernetes_job(
         logger.debug("kubernetes volume mounts: %s", volume_mounts)
         logger.debug("kubernetes environment secrets: %s", secret_env_vars)
         logger.debug("kubernetes tolerations: %s", tolerations)
-        logger.debug("kubernetes security context capabilities: %s", security_context_capabilities)
+        logger.debug("kubernetes security context: %s", security_context)
 
     pod_name_env_var = kubernetes.client.V1EnvVar(  # type: ignore
         name=KUBERNETES_POD_NAME_ENV_VAR,
@@ -581,17 +595,6 @@ def _schedule_kubernetes_job(
             )
         ),
     )
-
-    security_context = None
-    if security_context_capabilities:
-        security_context = kubernetes.client.V1SecurityContext(
-                allow_privilege_escalation=True,
-                privileged=True,
-                capabilities=[
-                    kubernetes.client.V1Capabilities(add=cap_name)
-                    for cap_name in security_context_capabilities
-                ]
-        )
 
     # See client documentation here:
     # https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/V1Job.md

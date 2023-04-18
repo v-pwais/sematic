@@ -36,7 +36,7 @@ def test_is_serializable():
                 )
             ],
             mount_expanded_shared_memory=True,
-            security_context_capabilities=['SYS_ADMIN'],
+            security_context_capabilities=["SYS_ADMIN"],
         )
     )
     encoded = value_to_json_encodable(requirements, ResourceRequirements)

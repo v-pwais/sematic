@@ -88,7 +88,7 @@ def test_schedule_kubernetes_job(k8s_batch_client, mock_kube_config):
                 KubernetesToleration(),
             ],
             mount_expanded_shared_memory=True,
-            security_context_capabilities=['SYS_ADMIN'],
+            security_context_capabilities=["SYS_ADMIN"],
         )
     )
 
