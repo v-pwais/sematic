@@ -20,7 +20,11 @@ from urllib3.exceptions import ConnectionError
 
 # Sematic
 from sematic.config.config import KUBERNETES_POD_NAME_ENV_VAR, ON_WORKER_ENV_VAR
-from sematic.config.server_settings import ServerSettingsVar, get_server_setting
+from sematic.config.server_settings import (
+    ServerSettingsVar,
+    get_bool_server_setting,
+    get_server_setting,
+)
 from sematic.config.settings import get_plugin_setting
 from sematic.config.user_settings import UserSettingsVar
 from sematic.container_images import CONTAINER_IMAGE_ENV_VAR
@@ -552,9 +556,10 @@ def _schedule_kubernetes_job(
             volume_mounts.append(mount)
 
         if resource_requirements.kubernetes.security_context is not None:
-            if not get_server_setting(
+            allow_customization = get_bool_server_setting(
                 ServerSettingsVar.ALLOW_CUSTOM_SECURITY_CONTEXTS, False
-            ):
+            )
+            if not allow_customization:
                 raise ValueError(
                     "User tried to customize the security context for their "
                     "Sematic function, but ALLOW_CUSTOM_SECURITY_CONTEXTS is "

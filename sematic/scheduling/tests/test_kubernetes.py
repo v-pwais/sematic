@@ -11,8 +11,10 @@ from sematic.api.tests.fixtures import mock_server_settings
 from sematic.config.server_settings import ServerSettingsVar
 from sematic.db.tests.fixtures import make_job
 from sematic.resolvers.resource_requirements import (
+    KubernetesCapabilities,
     KubernetesResourceRequirements,
     KubernetesSecretMount,
+    KubernetesSecurityContext,
     KubernetesToleration,
     KubernetesTolerationEffect,
     KubernetesTolerationOperator,
@@ -88,11 +90,17 @@ def test_schedule_kubernetes_job(k8s_batch_client, mock_kube_config):
                 KubernetesToleration(),
             ],
             mount_expanded_shared_memory=True,
-            security_context_capabilities=["SYS_ADMIN"],
+            security_context=KubernetesSecurityContext(
+                privileged=True,
+                allow_privilege_escalation=True,
+                capabilities=KubernetesCapabilities(add=["SYS_ADMIN"]),
+            ),
         )
     )
 
-    with environment_variables({"SEMATIC_CONTAINER_IMAGE": image_uri}):
+    with environment_variables(
+        {"SEMATIC_CONTAINER_IMAGE": image_uri, "ALLOW_CUSTOM_SECURITY_CONTEXTS": "true"}
+    ):
         _schedule_kubernetes_job(
             name=name,
             image=image_uri,
