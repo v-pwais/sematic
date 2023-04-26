@@ -104,6 +104,7 @@ service_account:
 worker:
   service_account:
     name: default
+  can_customize_security_context: false
 
 service:
   create: false
