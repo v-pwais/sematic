@@ -22,6 +22,7 @@ from sematic.abstract_future import FutureState
 from sematic.api.app import sematic_api
 from sematic.api.endpoints.auth import authenticate
 from sematic.api.endpoints.events import broadcast_graph_update, broadcast_job_update
+from sematic.api.endpoints.metrics import MetricEvent, save_event_metrics
 from sematic.api.endpoints.payloads import get_run_payload, get_runs_payload
 from sematic.api.endpoints.request_parameters import (
     get_request_parameters,
@@ -35,6 +36,7 @@ from sematic.db.models.run import Run
 from sematic.db.models.user import User
 from sematic.db.queries import (
     get_basic_pipeline_metrics,
+    get_existing_run_ids,
     get_external_resources_by_run_id,
     get_jobs_by_run_id,
     get_resolution,
@@ -42,13 +44,14 @@ from sematic.db.queries import (
     get_run,
     get_run_graph,
     get_run_status_details,
+    get_runs_with_orphaned_jobs,
     save_graph,
     save_job,
     save_run,
     save_run_external_resource_links,
 )
 from sematic.log_reader import load_log_lines
-from sematic.scheduling.job_scheduler import schedule_run, update_run_status
+from sematic.scheduling.job_scheduler import clean_jobs, schedule_run, update_run_status
 from sematic.scheduling.kubernetes import cancel_job
 from sematic.utils.exceptions import IllegalStateTransitionError
 from sematic.utils.retry import retry
@@ -494,11 +497,18 @@ def save_graph_endpoint(user: Optional[User]):
         if user is not None:
             run.user_id = user.id
 
+    run_ids = [run.id for run in runs]
+    existing_run_ids = get_existing_run_ids(run_ids)
+    new_runs = [run for run in runs if run.id not in existing_run_ids]
+
     # save graph BEFORE ensuring jobs are stopped. This way
     # code that is checking on job status will be ok if it
     # sees the jobs as gone while we are going through and
     # deleting them.
     save_graph(runs, artifacts, edges)
+
+    if len(new_runs) > 0:
+        save_event_metrics(MetricEvent.run_created, new_runs, user)
 
     for run in runs:
         if FutureState[run.future_state].is_terminal():
@@ -561,5 +571,38 @@ def get_run_jobs(user: Optional[User], run_id: str) -> flask.Response:
     return flask.jsonify(
         dict(
             content=jobs,
+        )
+    )
+
+
+@sematic_api.route("/api/v1/runs/with_orphaned_jobs", methods=["GET"])
+@authenticate
+def get_orphaned_job_identifiers_endpoint(user: Optional[User]) -> flask.Response:
+    run_ids = get_runs_with_orphaned_jobs()
+
+    return flask.jsonify(
+        dict(
+            content=run_ids,
+        )
+    )
+
+
+@sematic_api.route("/api/v1/runs/<run_id>/clean_jobs", methods=["POST"])
+@authenticate
+def clean_orphaned_jobs_endpoint(user: Optional[User], run_id: str) -> flask.Response:
+    run = get_run(run_id)
+    if not FutureState[run.future_state].is_terminal():  # type: ignore
+        message = (
+            f"Can't clean jobs of run {run_id} "
+            f"in non-terminal state {run.future_state}."
+        )
+        return jsonify_error(message, HTTPStatus.BAD_REQUEST)
+    force = flask.request.args.get("force", "false").lower() == "true"
+    jobs = get_jobs_by_run_id(run_id)
+    state_changes = clean_jobs(jobs, force)
+    broadcast_job_update(run_id, user)
+    return flask.jsonify(
+        dict(
+            content=[change.value for change in state_changes],
         )
     )

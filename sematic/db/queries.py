@@ -5,7 +5,7 @@ Module holding common DB queries.
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 # Third-party
 import sqlalchemy
@@ -25,7 +25,7 @@ from sematic.db.models.run import Run
 from sematic.db.models.runs_external_resource import RunExternalResource
 from sematic.db.models.user import User
 from sematic.plugins.abstract_external_resource import ManagedBy, ResourceState
-from sematic.scheduling.job_details import JobKind, JobKindString
+from sematic.scheduling.job_details import JobKind, JobKindString, KubernetesJobState
 from sematic.utils.exceptions import IllegalStateTransitionError
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,26 @@ def get_run(run_id: str) -> Run:
         return session.query(Run).filter(Run.id == run_id).one()
 
 
+def get_existing_run_ids(run_ids: Iterable[str]) -> Set[str]:
+    """
+    From a list of run IDs, return a set of the ones that exist in the DB.
+
+    Parameters
+    ----------
+    run_ids: Iterable[str]
+        List of run IDs to check for existence.
+
+    Returns
+    -------
+    Set[str]
+        The set of existing run IDs.
+    """
+    with db().get_session() as session:
+        existing_run_ids = session.query(Run.id).filter(Run.id.in_(run_ids)).all()
+
+    return set([row[0] for row in existing_run_ids])
+
+
 def get_run_status_details(
     run_ids: List[str],
 ) -> Dict[str, Tuple[FutureState, List[Job]]]:
@@ -181,6 +201,13 @@ def get_run_status_details(
         for run_id, future_state, _ in query_results  # type: ignore
     }
     return future_state_and_jobs_by_run_id
+
+
+def get_calculator_path(run_id: str) -> str:
+    with db().get_session() as session:
+        row = session.query(Run.calculator_path).filter(Run.id == run_id).one()
+
+    return row[0]
 
 
 @dataclass
@@ -303,6 +330,67 @@ def save_job(job: Job) -> Job:
         session.commit()
 
         return job
+
+
+def get_runs_with_orphaned_jobs() -> List[str]:
+    with db().get_session() as session:
+        query_results = list(
+            session.query(
+                Job.run_id,
+                sqlalchemy.func.max(Job.kind),
+                sqlalchemy.func.max(Job.state),
+                sqlalchemy.func.max(Run.id),
+                sqlalchemy.func.max(Run.future_state),
+            )
+            .filter(Job.run_id == Run.id)
+            .filter(Job.kind == JobKind.run)
+            .filter(
+                Run.future_state.in_(
+                    [state.value for state in FutureState.terminal_states()]
+                )
+            )
+            .filter(Job.state.not_in(KubernetesJobState.terminal_states()))
+            .group_by(Job.run_id)
+            .all()
+        )
+        run_ids = []
+        for _, __, job_state, run_id, future_state in query_results:
+            logger.info(
+                "Run %s in state %s has orphaned job in state %s",
+                run_id,
+                future_state,
+                job_state,
+            )
+            run_ids.append(run_id)
+    return list(run_ids)
+
+
+def get_resolutions_with_orphaned_jobs() -> List[str]:
+    with db().get_session() as session:
+        query_results = list(
+            session.query(
+                Job.run_id, Job.kind, Job.state, Resolution.root_id, Resolution.status
+            )
+            .filter(Job.run_id == Resolution.root_id)
+            .filter(Job.kind == JobKind.resolver)
+            .filter(
+                Resolution.status.in_(
+                    [status.value for status in ResolutionStatus.terminal_states()]
+                )
+            )
+            .filter(Job.state.not_in(KubernetesJobState.terminal_states()))
+            .all()
+        )
+        resolution_ids = []
+        for _, __, job_state, root_id, status in query_results:
+            logger.info(
+                "Resolution %s in state %s has orphaned job in state %s",
+                root_id,
+                status,
+                job_state,
+            )
+            resolution_ids.append(root_id)
+    return resolution_ids
 
 
 def get_jobs_by_run_id(run_id: str, kind: JobKindString = JobKind.run) -> List[Job]:
