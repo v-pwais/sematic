@@ -445,7 +445,7 @@ def _build_from_dockerfile(
                 path=os.getcwd(),
                 tag=built_image_name,
                 decode=True,
-                pull=True,
+                pull=False,
                 **optional_kwargs,
             )
 
