@@ -206,8 +206,9 @@ How one can build a wheel on a host that only has docker:
 .. code-block::
 
    mycomputer $$ cd ~/path/to/my/sematic
-   mycomputer $$ docker build -t sematic-builder -f docker/Dockerfile.dev .
+   mycomputer $$ docker build -t sematic-builder -f docker/Dockerfile.ci .
    mycomputer $$ docker run -it -v`pwd`:/opt/sematic -w /opt/sematic sematic-builder bash
-   indocker $ pip3 install -r ./requirements/ci-requirements.txt
+   indocker $ sudo apt-get install -y python3-pip
+   indocker $ sudo pip3 install -r ./requirements/ci-requirements.txt
    indocker $ make wheel
    mycomputer $$ echo "your wheel is now at ~/path/to/my/sematic"
