@@ -218,6 +218,7 @@ def _launch(
             BUILD_CONFIG_ENV_VAR: repr(build_config),
         }
     ):
+        # TODO: run in docker with image_uri ?
         runpy.run_path(path_name=target, run_name="__main__")
 
     logger.debug("Finished launching target: '%s'", target)
