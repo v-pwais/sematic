@@ -274,6 +274,7 @@ def _launch(
                 --gpus=all \
                 --net=host \
                 --env SEMATIC_IS_RUNNING_IN_DOCKER=True \
+                --env {CONTAINER_IMAGE_ENV_VAR}="{repr(image_uri)}" \
                 --ipc=host \
                 -v {sematic_settings_path}/:/root/.sematic:ro \
                 -v {os.getcwd()}:/app:z \
